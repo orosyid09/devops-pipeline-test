@@ -1,0 +1,22 @@
+
+{
+  "name": "devops-api",
+  "version": "1.0.0",
+  "description": "Node.js REST API for CI/CD testing",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "lint": "eslint src tests",
+    "test": "jest",
+    "build": "node --check src/index.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "eslint": "^9.0.0",
+    "jest": "^30.0.0",
+    "globals": "^16.0.0",
+    "supertest": "^7.1.0"
+  }
+}
