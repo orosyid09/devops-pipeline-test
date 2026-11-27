@@ -1,0 +1,120 @@
+
+name: Node.js CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - "feature/**"
+      - develop
+      - staging
+      - main
+    paths:
+      - "apps/api/**"
+      - ".github/workflows/ci-cd.yml"
+
+  pull_request:
+    branches:
+      - develop
+      - main
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository }}/api
+
+jobs:
+  install:
+    name: Install Dependencies
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/api/package.json
+
+      - name: Install
+        working-directory: apps/api
+        run: npm install
+
+      - name: Save dependencies
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-dependencies
+          path: |
+            apps/api/node_modules
+            apps/api/package.json
+          include-hidden-files: true
+          retention-days: 1
+
+  quality:
+    name: Lint and Unit Test
+    needs: install
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: api-dependencies
+          path: apps/api
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Lint and Test in Parallel
+        working-directory: apps/api
+        run: |
+          npm run lint &
+          LINT_PID=$!
+
+          npm test &
+          TEST_PID=$!
+
+          wait $LINT_PID
+          LINT_STATUS=$?
+
+          wait $TEST_PID
+          TEST_STATUS=$?
+
+          if [ "$LINT_STATUS" -ne 0 ] || [ "$TEST_STATUS" -ne 0 ]; then
+            exit 1
+          fi
+
+  docker-build:
+    name: Build Docker Image
+    needs: quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Image
+        run: |
+          docker build \
+            -f apps/api/Dockerfile \
+            -t ${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            .
+
+      - name: Login to GHCR
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+          docker login ghcr.io \
+          -u "${{ github.actor }}" \
+          --password-stdin
+
+      - name: Push Image
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
+        run: |
+          docker push ${{ env.IMAGE_NAME }}:${{ github.sha }}
