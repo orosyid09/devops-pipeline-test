@@ -24,6 +24,9 @@ env:
   IMAGE_NAME: ghcr.io/${{ github.repository }}/api
 
 jobs:
+  # ==========================================
+  # CI 1 - ESLINT
+  # ==========================================
   lint:
     name: ESLint
     runs-on: ubuntu-latest
@@ -40,6 +43,8 @@ jobs:
         with:
           path: ~/.npm
           key: ${{ runner.os }}-npm-${{ hashFiles('apps/api/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
 
       - name: Install dependencies
         working-directory: apps/api
@@ -49,6 +54,9 @@ jobs:
         working-directory: apps/api
         run: npm run lint
 
+  # ==========================================
+  # CI 2 - JEST UNIT TEST
+  # ==========================================
   test:
     name: Jest Unit Test
     runs-on: ubuntu-latest
@@ -65,6 +73,8 @@ jobs:
         with:
           path: ~/.npm
           key: ${{ runner.os }}-npm-${{ hashFiles('apps/api/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
 
       - name: Install dependencies
         working-directory: apps/api
@@ -74,6 +84,9 @@ jobs:
         working-directory: apps/api
         run: npm test
 
+  # ==========================================
+  # CI 3 - DOCKER BUILD
+  # ==========================================
   docker-build:
     name: Build and Push Docker Image
     needs: [lint, test]
@@ -101,10 +114,12 @@ jobs:
           push: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main') }}
           tags: |
             ${{ env.IMAGE_NAME }}:${{ github.sha }}
-            ${{ env.IMAGE_NAME }}:${{ github.ref_name }}-latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # ==========================================
+  # DEPLOY TO STAGING - SIMULATION
+  # ==========================================
   deploy-staging:
     name: Deploy to Staging (Simulation)
     needs: docker-build
@@ -145,6 +160,9 @@ jobs:
           echo "Staging smoke test failed"
           exit 1
 
+  # ==========================================
+  # DEPLOY TO PRODUCTION - SIMULATION
+  # ==========================================
   deploy-production:
     name: Deploy to Production (Simulation)
     needs: docker-build
@@ -171,6 +189,7 @@ jobs:
             docker tag \
               ${{ env.IMAGE_NAME }}:production-current \
               ${{ env.IMAGE_NAME }}:production-rollback
+
             echo "HAS_PREVIOUS=true" >> "$GITHUB_ENV"
           else
             echo "HAS_PREVIOUS=false" >> "$GITHUB_ENV"
@@ -193,6 +212,7 @@ jobs:
               echo "Production health check passed"
               exit 0
             fi
+
             echo "Health check attempt $i/24"
             sleep 5
           done
